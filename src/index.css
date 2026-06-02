@@ -1,0 +1,85 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  font-family: 'DM Sans', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #F4F6FB;
+  overflow-x: hidden;
+}
+
+/* Phone-frame wrapper on desktop */
+#root {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  min-height: 100dvh;
+}
+
+.phone-frame {
+  width: 100%;
+  max-width: 430px;
+  min-height: 100dvh;
+  background: #F4F6FB;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 0 60px rgba(0,0,0,0.15);
+}
+
+/* Scrollable content area */
+.scroll-area {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.scroll-area::-webkit-scrollbar { display: none; }
+
+/* Mic glow rings */
+.mic-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(0,194,124,0.5);
+  animation: glowRing 2s ease-in-out infinite;
+}
+.mic-ring-1 { width: 100px; height: 100px; animation-delay: 0s; }
+.mic-ring-2 { width: 130px; height: 130px; animation-delay: 0.4s; }
+.mic-ring-3 { width: 160px; height: 160px; animation-delay: 0.8s; }
+
+/* Wave bars for listening */
+.wave-bar {
+  width: 4px;
+  border-radius: 2px;
+  background: #00C27C;
+  transform-origin: bottom;
+}
+
+/* Bounce dots */
+.bounce-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: #00C27C;
+  animation: bounceDot 1.4s ease-in-out infinite;
+}
+.bounce-dot:nth-child(2) { animation-delay: 0.2s; }
+.bounce-dot:nth-child(3) { animation-delay: 0.4s; }
+
+/* Card shadows */
+.card { box-shadow: 0 2px 16px rgba(26,60,143,0.08); }
+.card-hover:hover { box-shadow: 0 8px 32px rgba(26,60,143,0.14); }
+
+/* Input focus ring */
+input:focus, textarea:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(0,194,124,0.2);
+}
+
+/* Safe area bottom */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom, 16px); }
