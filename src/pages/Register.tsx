@@ -5,6 +5,7 @@ import { useVoiceGuide } from '../hooks/useVoiceGuide';
 import { MicButton, AmiraReopenButton } from '../components/amira/MicButton';
 import { AmiraBubble } from '../components/amira/AmiraBubble';
 import { PinInput } from '../components/ui/PinInput';
+import { InpaayLogo } from '../assets/InpaayLogo';
 import { parseMonth, parseNumberFromSpeech, generateAccountNumber } from '../utils';
 import { extractPhone } from '../utils/intent';
 
@@ -190,7 +191,12 @@ export function Register() {
       <div className="flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0D1B3E, #1A3C8F)' }}>
         <div className="flex items-center gap-3 px-4 pt-12 pb-3">
           <button onClick={() => navigate('welcome')} className="text-white/60 text-sm p-2 -ml-2">← {L.back}</button>
-          <h1 className="text-white font-bold text-base flex-1">Create Account</h1>
+          <div className="flex items-center gap-2 flex-1">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#fff' }}>
+              <InpaayLogo size={22} />
+            </div>
+            <h1 className="text-white font-bold text-base">Create Account</h1>
+          </div>
           {amiraDismissed ? (
             <AmiraReopenButton onReopen={restoreAmira} />
           ) : step !== 'pin' ? (

@@ -4,6 +4,7 @@ import { useAmira } from '../hooks/useAmira';
 import { MicButton, AmiraReopenButton } from '../components/amira/MicButton';
 import { AmiraBubble } from '../components/amira/AmiraBubble';
 import { PinInput } from '../components/ui/PinInput';
+import { InpaayLogo } from '../assets/InpaayLogo';
 import { extractPhone } from '../utils/intent';
 
 export function Login() {
@@ -72,9 +73,14 @@ export function Login() {
   return (
     <div className="phone-frame bg-surface-light">
       <div className="flex-shrink-0" style={{ background: 'linear-gradient(135deg, #0D1B3E, #1A3C8F)' }}>
-        <div className="flex items-center gap-3 px-4 pt-12 pb-6">
+        <div className="flex items-center gap-3 px-4 pt-12 pb-3">
           <button onClick={() => navigate('welcome')} className="text-white/60 text-sm p-2 -ml-2">← {L.back}</button>
-          <h1 className="text-white font-bold text-lg flex-1">Sign In</h1>
+          <div className="flex items-center gap-2 flex-1">
+            <div className="w-7 h-7 rounded-lg flex items-center justify-center" style={{ background: '#fff' }}>
+              <InpaayLogo size={22} />
+            </div>
+            <span className="text-white font-bold text-lg">Sign In</span>
+          </div>
           {amiraDismissed ? (
             <AmiraReopenButton onReopen={restoreAmira} />
           ) : (

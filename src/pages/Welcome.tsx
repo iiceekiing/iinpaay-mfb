@@ -4,6 +4,7 @@ import { useAmira } from '../hooks/useAmira';
 import { MicButton, AmiraReopenButton } from '../components/amira/MicButton';
 import { AmiraBubble } from '../components/amira/AmiraBubble';
 import { VoiceToggle } from '../components/ui/VoiceToggle';
+import { InpaayLogo } from '../assets/InpaayLogo';
 import { LANG_OPTIONS, LANGS } from '../constants/langs';
 import { detectIntent, isYes } from '../utils/intent';
 import type { LangCode } from '../types';
@@ -134,11 +135,11 @@ export function Welcome() {
 
         {/* Logo */}
         <div className="flex flex-col items-center pt-6 pb-4 animate-fade-in">
-          <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
-               style={{ background: 'rgba(0,194,124,0.12)', border: '1.5px solid rgba(0,194,124,0.35)' }}>
-            <span className="text-2xl font-black text-brand-accent" style={{ fontFamily: 'DM Sans' }}>ii</span>
+          <div className="w-20 h-20 rounded-3xl flex items-center justify-center mb-3"
+               style={{ background: '#fff', boxShadow: '0 8px 32px rgba(26,86,240,0.22)' }}>
+            <InpaayLogo size={64} />
           </div>
-          <span className="text-2xl font-black text-white tracking-tight">iinpaay</span>
+          <span className="text-2xl font-black text-white tracking-tight">INPAAY</span>
           <span className="text-[10px] font-medium text-white/35 tracking-widest uppercase mt-0.5">Financial Trust</span>
         </div>
 
