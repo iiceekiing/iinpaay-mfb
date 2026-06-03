@@ -6,21 +6,17 @@ import type { LangCode } from '../types';
 // ── Web Speech API types ──────────────────────────────────────
 interface ISpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
+  resultIndex: number;
 }
-interface ISpeechRecognitionErrorEvent extends Event {
-  error: string;
-}
+interface ISpeechRecognitionErrorEvent extends Event { error: string; }
 interface ISpeechRecognition extends EventTarget {
-  lang:            string;
-  continuous:      boolean;
-  interimResults:  boolean;
-  maxAlternatives: number;
-  onresult: ((ev: ISpeechRecognitionEvent)      => void) | null;
+  lang: string; continuous: boolean; interimResults: boolean; maxAlternatives: number;
+  onresult: ((ev: ISpeechRecognitionEvent) => void) | null;
   onerror:  ((ev: ISpeechRecognitionErrorEvent) => void) | null;
   onend:    (() => void) | null;
-  start():  void;
-  stop():   void;
-  abort():  void;
+  onspeechstart: (() => void) | null;
+  onspeechend:   (() => void) | null;
+  start(): void; stop(): void; abort(): void;
 }
 interface ISpeechRecognitionCtor { new(): ISpeechRecognition; }
 
@@ -38,150 +34,127 @@ export function isSpeechSupported(): boolean {
 const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 
 // ── INPAAY brand pronunciation ────────────────────────────────
-// Always pronounce as "inpay" (short for instalmental payment)
 export function sanitizeForSpeech(text: string): string {
   return text
     .replace(/iinpaay/gi, 'inpay')
     .replace(/INPAAY/g,   'inpay');
 }
 
+// ── Microphone permission helpers ─────────────────────────────
+export async function checkMicPermission(): Promise<'granted' | 'denied' | 'prompt'> {
+  try {
+    if (!navigator.permissions) return 'prompt';
+    const result = await navigator.permissions.query({ name: 'microphone' as PermissionName });
+    return result.state as 'granted' | 'denied' | 'prompt';
+  } catch {
+    return 'prompt';
+  }
+}
+
+export async function requestMicAccess(): Promise<boolean> {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach(t => t.stop());
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ── Female voice selection ────────────────────────────────────
-const FEMALE_NAME_PATTERNS: RegExp[] = [
-  /female/i, /woman/i, /girl/i, /féminine/i,
-  // macOS / iOS
-  /samantha/i, /victoria/i, /karen/i, /moira/i, /tessa/i,
-  /fiona/i, /veena/i, /ava/i, /allison/i, /susan/i, /kathy/i,
-  // Windows / Edge
+const FEMALE_PATTERNS: RegExp[] = [
+  /female/i, /woman/i, /girl/i,
+  /samantha/i, /victoria/i, /karen/i, /moira/i, /tessa/i, /fiona/i,
+  /veena/i, /ava/i, /allison/i, /susan/i, /kathy/i,
   /zira/i, /hazel/i, /libby/i, /aria/i, /jenny/i, /ana/i, /emma/i,
   /sonia/i, /natasha/i, /catherine/i, /linda/i, /kate/i, /michelle/i,
-  // Google TTS
-  /google.*female/i, /google.*uk.*english.*female/i,
-  // African / warm names
-  /ngozi/i, /amira/i, /aisha/i, /fatima/i, /grace/i, /joy/i, /adaeze/i,
+  /google.*female/i,
+  /ngozi/i, /amira/i, /aisha/i, /fatima/i, /grace/i, /joy/i,
 ];
-
-const MALE_NAME_PATTERNS: RegExp[] = [
+const MALE_PATTERNS: RegExp[] = [
   /\bmale\b/i, /\bman\b/i, /\bfred\b/i, /\balex\b/i, /\btom\b/i,
-  /\bdaniel\b/i, /\blee\b/i, /\brishi\b/i, /\bmohan\b/i, /\bjames\b/i,
-  /\bdavid\b/i, /\bmichael\b/i, /\brobert\b/i, /\bmark\b/i,
+  /\bdaniel\b/i, /\blee\b/i, /\brishi\b/i, /\bmohan\b/i,
+  /\bjames\b/i, /\bdavid\b/i, /\bmichael\b/i,
 ];
-
 const PREMIUM_PATTERNS: RegExp[] = [
-  /premium/i, /enhanced/i, /neural/i, /natural/i, /google/i,
-  /wavenet/i, /studio/i, /journey/i,
+  /premium/i, /enhanced/i, /neural/i, /natural/i, /google/i, /wavenet/i, /studio/i,
 ];
 
-function pickFemaleVoice(
-  voices: SpeechSynthesisVoice[],
-  langCode: string
-): SpeechSynthesisVoice | null {
-  const langPrefix = langCode.split('-')[0] ?? 'en';
+function pickFemaleVoice(voices: SpeechSynthesisVoice[], langCode: string) {
+  const pfx = langCode.split('-')[0] ?? 'en';
+  const isFemale  = (v: SpeechSynthesisVoice) => !MALE_PATTERNS.some(p => p.test(v.name)) && FEMALE_PATTERNS.some(p => p.test(v.name));
+  const isPremium = (v: SpeechSynthesisVoice) => PREMIUM_PATTERNS.some(p => p.test(v.name));
+  const notMale   = (v: SpeechSynthesisVoice) => !MALE_PATTERNS.some(p => p.test(v.name));
 
-  function isFemale(v: SpeechSynthesisVoice): boolean {
-    if (MALE_NAME_PATTERNS.some(p => p.test(v.name))) return false;
-    return FEMALE_NAME_PATTERNS.some(p => p.test(v.name));
-  }
-  function isPremium(v: SpeechSynthesisVoice): boolean {
-    return PREMIUM_PATTERNS.some(p => p.test(v.name));
-  }
-  function notMale(v: SpeechSynthesisVoice): boolean {
-    return !MALE_NAME_PATTERNS.some(p => p.test(v.name));
-  }
+  const langV  = voices.filter(v => v.lang.startsWith(pfx));
+  const femL   = langV.filter(isFemale);
+  const premL  = femL.find(isPremium);
+  if (premL)           return premL;
+  if (femL.length)     return femL[0]!;
+  const notMaleL = langV.filter(notMale);
+  if (notMaleL.length) return notMaleL[0]!;
 
-  // 1. Premium female in target language
-  const langVoices = voices.filter(v => v.lang.startsWith(langPrefix));
-  const femaleLang = langVoices.filter(isFemale);
-  const premLang   = femaleLang.find(isPremium);
-  if (premLang) return premLang;
-  if (femaleLang.length > 0) return femaleLang[0]!;
+  const enV    = voices.filter(v => v.lang.startsWith('en'));
+  const femE   = enV.filter(isFemale);
+  const premE  = femE.find(isPremium);
+  if (premE)           return premE;
+  if (femE.length)     return femE[0]!;
+  const notMaleE = enV.filter(notMale);
+  if (notMaleE.length) return notMaleE[0]!;
 
-  // 2. Any non-male in target language
-  const notMaleLang = langVoices.filter(notMale);
-  if (notMaleLang.length > 0) return notMaleLang[0]!;
-
-  // 3. Premium female in English
-  const enVoices = voices.filter(v => v.lang.startsWith('en'));
-  const femaleEn = enVoices.filter(isFemale);
-  const premEn   = femaleEn.find(isPremium);
-  if (premEn)  return premEn;
-  if (femaleEn.length > 0) return femaleEn[0]!;
-
-  // 4. Any non-male English voice
-  const notMaleEn = enVoices.filter(notMale);
-  if (notMaleEn.length > 0) return notMaleEn[0]!;
-
-  // 5. Anything
   return voices[0] ?? null;
 }
 
 // ── Hook ──────────────────────────────────────────────────────
 export function useAmira() {
-  const language     = useStore(s => s.language);
-  const voiceEnabled = useStore(s => s.voiceEnabled);
-  const setAmiraText = useStore(s => s.setAmiraText);
-  const setTranscript= useStore(s => s.setTranscript);
-  const setSpeaking  = useStore(s => s.setSpeaking);
-  const setListening = useStore(s => s.setListening);
-  const setProcessing= useStore(s => s.setProcessing);
+  const language        = useStore(s => s.language);
+  const voiceEnabled    = useStore(s => s.voiceEnabled);
+  const setAmiraText    = useStore(s => s.setAmiraText);
+  const setTranscript   = useStore(s => s.setTranscript);
+  const setSpeaking     = useStore(s => s.setSpeaking);
+  const setListening    = useStore(s => s.setListening);
+  const setProcessing   = useStore(s => s.setProcessing);
+  const setMicPermission= useStore(s => s.setMicPermission);
 
-  const recognitionRef = useRef<ISpeechRecognition | null>(null);
-  const cancelSpeakRef = useRef(false);
+  const recognitionRef  = useRef<ISpeechRecognition | null>(null);
+  const cancelSpeakRef  = useRef(false);
+  const stopListenRef   = useRef(false);   // signal to abort listening loop
 
   // ── Text-to-Speech ────────────────────────────────────────
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(resolve => {
-      // Always update the visual bubble text
       setAmiraText(text);
-
-      if (!voiceEnabled || !('speechSynthesis' in window)) {
-        setSpeaking(false);
-        resolve();
-        return;
-      }
+      if (!voiceEnabled || !('speechSynthesis' in window)) { setSpeaking(false); resolve(); return; }
 
       cancelSpeakRef.current = false;
       window.speechSynthesis.cancel();
       setSpeaking(true);
 
-      // Sanitize brand name pronunciation
       const spokenText = sanitizeForSpeech(text);
       const utterance  = new SpeechSynthesisUtterance(spokenText);
       const voiceCode  = LANG_VOICE_CODE[language as LangCode] || 'en-NG';
 
       const trySpeak = () => {
         if (cancelSpeakRef.current) { setSpeaking(false); resolve(); return; }
-
         const voices = window.speechSynthesis.getVoices();
         const voice  = pickFemaleVoice(voices, voiceCode);
+        if (voice) { utterance.voice = voice; utterance.lang = voice.lang || voiceCode; }
+        else utterance.lang = voiceCode;
 
-        if (voice) {
-          utterance.voice = voice;
-          utterance.lang  = voice.lang || voiceCode;
-        } else {
-          utterance.lang = voiceCode;
-        }
-
-        utterance.rate   = 0.9;    // slightly slower — clearer
-        utterance.pitch  = 1.05;   // gently feminine
-        utterance.volume = 1;
+        utterance.rate = 0.9; utterance.pitch = 1.05; utterance.volume = 1;
 
         const nudge = setInterval(() => {
           if (!window.speechSynthesis.speaking) clearInterval(nudge);
           else window.speechSynthesis.resume();
         }, 5000);
-
         utterance.onend   = () => { clearInterval(nudge); setSpeaking(false); resolve(); };
         utterance.onerror = () => { clearInterval(nudge); setSpeaking(false); resolve(); };
-
         window.speechSynthesis.speak(utterance);
       };
 
-      const voices = window.speechSynthesis.getVoices();
-      if (voices.length === 0) {
+      if (window.speechSynthesis.getVoices().length === 0)
         window.speechSynthesis.onvoiceschanged = trySpeak;
-      } else {
-        trySpeak();
-      }
+      else trySpeak();
     });
   }, [language, voiceEnabled, setAmiraText, setSpeaking]);
 
@@ -191,82 +164,163 @@ export function useAmira() {
     setSpeaking(false);
   }, [setSpeaking]);
 
-  // ── Speech Recognition ────────────────────────────────────
-  const listen = useCallback((timeoutMs = 15000): Promise<string> => {
-    return new Promise((resolve, reject) => {
+  // ── Speech Recognition (continuous, patient) ──────────────
+  /**
+   * listen — opens mic and waits for speech.
+   *
+   * Improvements over the old version:
+   * • Checks + requests mic permission first
+   * • Uses continuous=true so Chrome doesn't auto-stop
+   * • Tracks interim results to detect speech activity
+   * • Auto-restarts on no-speech error (browser timeout)
+   * • Hard timeout: up to 30s; soft timeout resets on each spoken word
+   */
+  const listen = useCallback((timeoutMs = 25000): Promise<string> => {
+    return new Promise(async (resolve, reject) => {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
       if (!SR) { reject(new Error('speech-not-supported')); return; }
 
+      // ── Check / request permission ─────────────────────────
+      const perm = await checkMicPermission();
+      if (perm === 'denied') {
+        setMicPermission('denied');
+        reject(new Error('mic-denied'));
+        return;
+      }
+      if (perm === 'prompt') {
+        const granted = await requestMicAccess();
+        if (!granted) {
+          setMicPermission('denied');
+          reject(new Error('mic-denied'));
+          return;
+        }
+      }
+      setMicPermission('granted');
+
+      // Abort any in-flight recognition
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch { /* ignore */ }
         recognitionRef.current = null;
       }
 
+      stopListenRef.current = false;
+      let resultCaptured = false;
+      let speechActivityDetected = false;
+      let softTimer: ReturnType<typeof setTimeout> | null = null;
+
+      setListening(true);
+      setProcessing(false);
+
+      // Hard timeout — give up after timeoutMs
+      const hardTimer = setTimeout(() => {
+        if (!resultCaptured) {
+          stopListenRef.current = true;
+          try { recognitionRef.current?.abort(); } catch { /* ignore */ }
+          recognitionRef.current = null;
+          setListening(false); setProcessing(false);
+          reject(new Error('timeout'));
+        }
+      }, timeoutMs);
+
+      const clearAllTimers = () => {
+        clearTimeout(hardTimer);
+        if (softTimer) clearTimeout(softTimer);
+      };
+
+      // Soft timeout — 6s after last detected speech activity
+      const resetSoftTimer = () => {
+        if (softTimer) clearTimeout(softTimer);
+        softTimer = setTimeout(() => {
+          if (!resultCaptured && speechActivityDetected) {
+            // Speech started but hasn't ended cleanly — stop and take what we have
+            try { recognitionRef.current?.stop(); } catch { /* ignore */ }
+          }
+        }, 6000);
+      };
+
       const startRec = () => {
+        if (stopListenRef.current || resultCaptured) return;
+
         const rec: ISpeechRecognition = new SR();
         recognitionRef.current = rec;
-
-        rec.lang            = 'en-NG';
-        rec.continuous      = false;
-        rec.interimResults  = false;
+        rec.lang           = 'en-NG';
+        rec.continuous     = true;     // keep mic open
+        rec.interimResults = true;     // detect speech activity via interim
         rec.maxAlternatives = 5;
 
-        let resultCaptured = false;
-        setListening(true);
-        setProcessing(false);
-
-        const hardTimeout = setTimeout(() => {
-          if (!resultCaptured) {
-            try { rec.abort(); } catch { /* ignore */ }
-            setListening(false);
-            setProcessing(false);
-            reject(new Error('timeout'));
-          }
-        }, timeoutMs);
+        rec.onspeechstart = () => {
+          speechActivityDetected = true;
+          resetSoftTimer();
+        };
 
         rec.onresult = (event: ISpeechRecognitionEvent) => {
-          clearTimeout(hardTimeout);
-          resultCaptured = true;
-          setListening(false);
-          const transcript = event.results[0]?.[0]?.transcript?.trim() ?? '';
-          setTranscript(transcript);
-          setProcessing(true);
-          setTimeout(() => setProcessing(false), 900);
-          resolve(transcript);
+          // Collect all final results
+          let finalText = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result?.isFinal) {
+              finalText += (result[0]?.transcript ?? '') + ' ';
+            } else {
+              // Interim — speech activity detected, reset soft timer
+              speechActivityDetected = true;
+              resetSoftTimer();
+            }
+          }
+
+          if (finalText.trim()) {
+            clearAllTimers();
+            resultCaptured = true;
+            stopListenRef.current = true;
+            try { rec.stop(); } catch { /* ignore */ }
+            setListening(false);
+
+            const transcript = finalText.trim();
+            setTranscript(transcript);
+            setProcessing(true);
+            setTimeout(() => setProcessing(false), 900);
+            resolve(transcript);
+          }
         };
 
         rec.onerror = (event: ISpeechRecognitionErrorEvent) => {
-          clearTimeout(hardTimeout);
-          setListening(false);
-          setProcessing(false);
+          if (resultCaptured || stopListenRef.current) return;
+
+          if (event.error === 'no-speech') {
+            // Chrome fires this after ~5-7s of silence — just restart
+            try { rec.abort(); } catch { /* ignore */ }
+            if (!stopListenRef.current) setTimeout(startRec, 150);
+            return;
+          }
+          if (event.error === 'aborted') return; // intentional
+
+          clearAllTimers();
+          setListening(false); setProcessing(false);
           reject(new Error(event.error));
         };
 
         rec.onend = () => {
-          clearTimeout(hardTimeout);
-          if (!resultCaptured) {
-            setListening(false);
-            setProcessing(false);
-            reject(new Error('ended-without-result'));
-          }
+          if (resultCaptured || stopListenRef.current) return;
+          // Ended without result (e.g. browser stopped) — restart
+          setTimeout(startRec, 150);
         };
 
         try {
           rec.start();
         } catch (e) {
-          clearTimeout(hardTimeout);
-          setListening(false);
-          setProcessing(false);
+          clearAllTimers();
+          setListening(false); setProcessing(false);
           reject(e);
         }
       };
 
-      // 200ms gap after TTS ends before mic opens
-      delay(200).then(startRec);
+      // Small gap after TTS ends before mic opens
+      await delay(250);
+      startRec();
     });
-  }, [setListening, setProcessing, setTranscript]);
+  }, [language, setListening, setProcessing, setTranscript, setMicPermission]);
 
   const stopListening = useCallback(() => {
+    stopListenRef.current = true;
     if (recognitionRef.current) {
       try { recognitionRef.current.abort(); } catch { /* ignore */ }
       recognitionRef.current = null;
@@ -275,66 +329,69 @@ export function useAmira() {
     setProcessing(false);
   }, [setListening, setProcessing]);
 
+  // ── converse — speak then listen, with patient retry ─────
   /**
-   * converse — speak a prompt then listen.
-   * Retries up to `maxRetries` times if no speech is detected.
-   * Returns null if all retries fail or voice is off.
+   * Speaks the prompt, then listens.
+   * On silence/timeout, retries up to `maxRetries` times with
+   * escalating patience messages, exactly as requested.
    */
   const converse = useCallback(async (
     text: string,
-    opts?: { listenMs?: number; pauseMs?: number; maxRetries?: number; retryPrompt?: string }
+    opts?: {
+      listenMs?:   number;
+      pauseMs?:    number;
+      maxRetries?: number;
+      retryPrompt?: string;
+    }
   ): Promise<string | null> => {
     await speak(text);
     if (!voiceEnabled) return null;
 
-    const maxRetries = opts?.maxRetries ?? 2;
-    const listenMs   = opts?.listenMs   ?? 15000;
+    const maxRetries  = opts?.maxRetries ?? 2;
+    const listenMs    = opts?.listenMs   ?? 25000;
+
+    const RETRY_MSGS = [
+      "I didn't hear anything. Please try again.",
+      "I still didn't hear a response. Please speak clearly when you're ready.",
+      "It's okay. Whenever you're ready, I'll be here to help.",
+    ];
 
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       await delay(opts?.pauseMs ?? 300);
       try {
         const result = await listen(listenMs);
         if (result && result.trim().length > 0) return result;
-      } catch {
-        // timeout or error — retry
+      } catch (e) {
+        const err = e instanceof Error ? e.message : '';
+        if (err === 'mic-denied') return null;   // no point retrying
+        // timeout / no-speech → retry
       }
 
       if (attempt < maxRetries) {
-        const retryMsg = opts?.retryPrompt ?? `I didn't hear a response. ${text}`;
+        const retryMsg = opts?.retryPrompt ?? RETRY_MSGS[attempt] ?? RETRY_MSGS[0]!;
         await speak(retryMsg);
+      } else {
+        // Final attempt exhausted — graceful exit
+        await speak(RETRY_MSGS[2]!);
+        stopListening();
       }
     }
-
     return null;
-  }, [speak, listen, voiceEnabled]);
+  }, [speak, listen, voiceEnabled, stopListening]);
 
-  /**
-   * prompt — identical to converse, clearer name for single-shot prompts.
-   */
-  const prompt = useCallback(async (
-    text: string,
-    timeoutMs = 15000
-  ): Promise<string | null> => {
+  const prompt = useCallback(async (text: string, timeoutMs = 25000): Promise<string | null> => {
     return converse(text, { listenMs: timeoutMs });
   }, [converse]);
 
-  /**
-   * activateListen — start listening without speaking first.
-   */
-  const activateListen = useCallback(async (timeoutMs = 15000): Promise<string | null> => {
+  const activateListen = useCallback(async (timeoutMs = 25000): Promise<string | null> => {
     if (!voiceEnabled) return null;
-    await delay(200);
+    await delay(250);
     try { return await listen(timeoutMs); } catch { return null; }
   }, [listen, voiceEnabled]);
 
   return {
-    speak,
-    listen,
-    converse,
-    prompt,
-    activateListen,
-    stopSpeaking,
-    stopListening,
-    isSpeechSupported,
+    speak, listen, converse, prompt, activateListen,
+    stopSpeaking, stopListening, isSpeechSupported,
+    checkMicPermission, requestMicAccess,
   };
 }

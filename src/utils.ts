@@ -1,13 +1,15 @@
-import type { User, Transaction, Project, Complaint } from './types';
+import type { User, Transaction, Project, Complaint, RefundRequest, AppNotification } from './types';
 
 // ── Storage keys ──────────────────────────────────────────────
 const KEYS = {
-  users:       'iinpaay_users',
-  currentUser: 'iinpaay_current',
-  transactions:'iinpaay_transactions',
-  projects:    'iinpaay_projects',
-  complaints:  'iinpaay_complaints',
-  language:    'iinpaay_language',
+  users:          'iinpaay_users',
+  currentUser:    'iinpaay_current',
+  transactions:   'iinpaay_transactions',
+  projects:       'iinpaay_projects',
+  complaints:     'iinpaay_complaints',
+  refundRequests: 'iinpaay_refund_requests',
+  notifications:  'iinpaay_notifications',
+  language:       'iinpaay_language',
 };
 
 function load<T>(key: string, fallback: T): T {
@@ -39,6 +41,14 @@ export function saveProjects(p: Project[]) { save(KEYS.projects, p); }
 export function getComplaints(): Complaint[] { return load<Complaint[]>(KEYS.complaints, []); }
 export function saveComplaints(c: Complaint[]) { save(KEYS.complaints, c); }
 
+// ── Refund Requests ───────────────────────────────────────────
+export function getRefundRequests(): RefundRequest[] { return load<RefundRequest[]>(KEYS.refundRequests, []); }
+export function saveRefundRequests(r: RefundRequest[]) { save(KEYS.refundRequests, r); }
+
+// ── Notifications ─────────────────────────────────────────────
+export function getNotifications(): AppNotification[] { return load<AppNotification[]>(KEYS.notifications, []); }
+export function saveNotifications(n: AppNotification[]) { save(KEYS.notifications, n); }
+
 // ── Language ──────────────────────────────────────────────────
 export function getSavedLanguage(): string | null { return localStorage.getItem(KEYS.language); }
 export function setSavedLanguage(lang: string)    { localStorage.setItem(KEYS.language, lang); }
@@ -48,8 +58,8 @@ export function setSavedLanguage(lang: string)    { localStorage.setItem(KEYS.la
 // e.g. 08037794810 → 8037794810
 export function generateAccountNumber(phone: string): string {
   const digits = phone.replace(/\D/g, '');
-  const stripped = digits.replace(/^0+/, '');          // remove leading zeros
-  return stripped.slice(0, 10).padEnd(10, '0');        // exactly 10 digits
+  const stripped = digits.replace(/^0+/, '');
+  return stripped.slice(0, 10).padEnd(10, '0');
 }
 
 // ── Generate unique ID ────────────────────────────────────────
@@ -62,7 +72,7 @@ export function formatNaira(amount: number): string {
   return '₦' + amount.toLocaleString('en-NG', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
-// ── Format date ───────────────────────────────────────────────
+// ── Format date / time ────────────────────────────────────────
 export function formatDate(iso: string): string {
   try {
     return new Date(iso).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' });
@@ -73,6 +83,15 @@ export function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
   } catch { return ''; }
+}
+
+export function formatDateTime(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('en-NG', {
+      day: 'numeric', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+  } catch { return iso; }
 }
 
 // ── Deadline helpers ──────────────────────────────────────────
