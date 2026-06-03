@@ -20,6 +20,7 @@ interface State {
   amiraText: string;
   isListening: boolean;
   isSpeaking: boolean;
+  amiraDismissed: boolean;   // session-level — resets on page refresh
 
   // Navigation
   navigate: (page: Page) => void;
@@ -41,9 +42,11 @@ interface State {
   createProject: (data: Omit<Project, 'id' | 'userId' | 'status' | 'createdAt'>) => void;
 
   // Amira
-  setAmiraText: (text: string) => void;
-  setListening: (v: boolean) => void;
-  setSpeaking: (v: boolean) => void;
+  setAmiraText:  (text: string) => void;
+  setListening:  (v: boolean) => void;
+  setSpeaking:   (v: boolean) => void;
+  dismissAmira:  () => void;
+  restoreAmira:  () => void;
 }
 
 export const useStore = create<State>((set, get) => ({
@@ -57,6 +60,7 @@ export const useStore = create<State>((set, get) => ({
   amiraText: '',
   isListening: false,
   isSpeaking: false,
+  amiraDismissed: false,
 
   navigate: (page) => set({ page }),
 
@@ -220,9 +224,11 @@ export const useStore = create<State>((set, get) => ({
     set({ projects: all.filter(p => p.userId === currentUser.id) });
   },
 
-  setAmiraText: (amiraText) => set({ amiraText }),
-  setListening: (isListening) => set({ isListening }),
-  setSpeaking: (isSpeaking) => set({ isSpeaking }),
+  setAmiraText:     (amiraText) => set({ amiraText }),
+  setListening:     (isListening) => set({ isListening }),
+  setSpeaking:      (isSpeaking) => set({ isSpeaking }),
+  dismissAmira:     () => set({ amiraDismissed: true }),
+  restoreAmira:     () => set({ amiraDismissed: false }),
 }));
 
 // Selector helpers

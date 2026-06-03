@@ -3,7 +3,7 @@ import { useStore } from '../store';
 import { LANG_VOICE_CODE } from '../constants/langs';
 import type { LangCode } from '../types';
 
-// Web Speech API types
+// ── Web Speech API types ──────────────────────────────────────
 interface SpeechRecognitionEvent extends Event {
   results: SpeechRecognitionResultList;
 }
@@ -16,46 +16,51 @@ interface ISpeechRecognition extends EventTarget {
   interimResults: boolean;
   maxAlternatives: number;
   onresult: ((ev: SpeechRecognitionEvent) => void) | null;
-  onerror: ((ev: SpeechRecognitionErrorEvent) => void) | null;
-  onend: (() => void) | null;
+  onerror:  ((ev: SpeechRecognitionErrorEvent) => void) | null;
+  onend:    (() => void) | null;
   start(): void;
   stop(): void;
+  abort(): void;
 }
-interface ISpeechRecognitionConstructor {
-  new(): ISpeechRecognition;
-}
+interface ISpeechRecognitionCtor { new(): ISpeechRecognition; }
 
 declare global {
   interface Window {
-    SpeechRecognition: ISpeechRecognitionConstructor;
-    webkitSpeechRecognition: ISpeechRecognitionConstructor;
+    SpeechRecognition:       ISpeechRecognitionCtor;
+    webkitSpeechRecognition: ISpeechRecognitionCtor;
   }
 }
 
-// ── Text-to-Speech ────────────────────────────────────────────
-
-function getBestVoice(langCode: string): SpeechSynthesisVoice | null {
-  const voices = window.speechSynthesis.getVoices();
-  // Try exact language match
-  let v = voices.find(v => v.lang === langCode);
-  if (v) return v;
-  // Try language prefix match
-  const prefix = langCode.split('-')[0];
-  v = voices.find(v => v.lang.startsWith(prefix ?? ''));
-  if (v) return v;
-  // Fall back to English
-  v = voices.find(v => v.lang.startsWith('en'));
-  if (v) return v;
-  return voices[0] ?? null;
+/** Check whether the browser supports SpeechRecognition at all */
+export function isSpeechSupported(): boolean {
+  return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
 }
 
+// ── Voice selection ───────────────────────────────────────────
+function getBestVoice(targetLang: string): SpeechSynthesisVoice | null {
+  const voices = window.speechSynthesis.getVoices();
+  return (
+    voices.find(v => v.lang === targetLang) ??
+    voices.find(v => v.lang.startsWith((targetLang.split('-')[0]) ?? '')) ??
+    voices.find(v => v.lang.startsWith('en')) ??
+    voices[0] ??
+    null
+  );
+}
+
+const delay = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+
+// ── Hook ──────────────────────────────────────────────────────
 export function useAmira() {
-  const language    = useStore(s => s.language);
+  const language     = useStore(s => s.language);
   const setAmiraText = useStore(s => s.setAmiraText);
   const setSpeaking  = useStore(s => s.setSpeaking);
   const setListening = useStore(s => s.setListening);
-  const recognitionRef = useRef<ISpeechRecognition | null>(null);
 
+  const recognitionRef = useRef<ISpeechRecognition | null>(null);
+  const speakCancelRef = useRef<boolean>(false);
+
+  // ── Text-to-Speech ────────────────────────────────────────
   const speak = useCallback((text: string): Promise<void> => {
     return new Promise(resolve => {
       if (!('speechSynthesis' in window)) {
@@ -65,7 +70,7 @@ export function useAmira() {
         return;
       }
 
-      // Cancel any ongoing speech
+      speakCancelRef.current = false;
       window.speechSynthesis.cancel();
       setAmiraText(text);
       setSpeaking(true);
@@ -73,18 +78,16 @@ export function useAmira() {
       const utterance = new SpeechSynthesisUtterance(text);
       const voiceCode = LANG_VOICE_CODE[language as LangCode] || 'en-NG';
 
-      // Voices may not be loaded yet
       const trySpeak = () => {
+        if (speakCancelRef.current) { setSpeaking(false); resolve(); return; }
         const voice = getBestVoice(voiceCode);
         if (voice) utterance.voice = voice;
-        utterance.lang  = voiceCode;
-        utterance.rate  = 0.88;
-        utterance.pitch = 1.05;
+        utterance.lang   = voiceCode;
+        utterance.rate   = 0.88;
+        utterance.pitch  = 1.05;
         utterance.volume = 1;
-
-        utterance.onend = () => { setSpeaking(false); resolve(); };
+        utterance.onend   = () => { setSpeaking(false); resolve(); };
         utterance.onerror = () => { setSpeaking(false); resolve(); };
-
         window.speechSynthesis.speak(utterance);
       };
 
@@ -97,65 +100,56 @@ export function useAmira() {
   }, [language, setAmiraText, setSpeaking]);
 
   const stopSpeaking = useCallback(() => {
+    speakCancelRef.current = true;
     window.speechSynthesis?.cancel();
     setSpeaking(false);
   }, [setSpeaking]);
 
-  // ── Speech Recognition ────────────────────────────────────────
-
-  const listen = useCallback((timeoutMs = 8000): Promise<string> => {
+  // ── Speech Recognition ────────────────────────────────────
+  const listen = useCallback((timeoutMs = 9000): Promise<string> => {
     return new Promise((resolve, reject) => {
       const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (!SR) {
-        reject(new Error('SpeechRecognition not supported in this browser'));
-        return;
-      }
+      if (!SR) { reject(new Error('not-supported')); return; }
 
-      // Stop previous if any
       if (recognitionRef.current) {
-        try { recognitionRef.current.stop(); } catch { /* ignore */ }
+        try { recognitionRef.current.abort(); } catch { /* ignore */ }
       }
 
-      const recognition: ISpeechRecognition = new SR();
-      recognitionRef.current = recognition;
-
-      // Always use English for recognition (most reliable across browsers)
-      // Amira speaks in the user's language; recognition processes English responses
-      recognition.lang = 'en-NG';
-      recognition.continuous = false;
-      recognition.interimResults = false;
-      recognition.maxAlternatives = 3;
+      const rec: ISpeechRecognition = new SR();
+      recognitionRef.current = rec;
+      rec.lang             = 'en-NG';
+      rec.continuous       = false;
+      rec.interimResults   = false;
+      rec.maxAlternatives  = 3;
 
       setListening(true);
 
-      const timeout = setTimeout(() => {
-        try { recognition.stop(); } catch { /* ignore */ }
+      const timeoutId = setTimeout(() => {
+        try { rec.stop(); } catch { /* ignore */ }
         setListening(false);
         reject(new Error('timeout'));
       }, timeoutMs);
 
-      recognition.onresult = (event: SpeechRecognitionEvent) => {
-        clearTimeout(timeout);
+      rec.onresult = (event: SpeechRecognitionEvent) => {
+        clearTimeout(timeoutId);
         setListening(false);
         const transcript = event.results[0]?.[0]?.transcript ?? '';
         resolve(transcript.trim());
       };
 
-      recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-        clearTimeout(timeout);
+      rec.onerror = (event: SpeechRecognitionErrorEvent) => {
+        clearTimeout(timeoutId);
         setListening(false);
         reject(new Error(event.error));
       };
 
-      recognition.onend = () => {
-        clearTimeout(timeout);
+      rec.onend = () => {
+        clearTimeout(timeoutId);
         setListening(false);
       };
 
-      try {
-        recognition.start();
-      } catch (e) {
-        clearTimeout(timeout);
+      try { rec.start(); } catch (e) {
+        clearTimeout(timeoutId);
         setListening(false);
         reject(e);
       }
@@ -164,20 +158,63 @@ export function useAmira() {
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
-      try { recognitionRef.current.stop(); } catch { /* ignore */ }
+      try { recognitionRef.current.abort(); } catch { /* ignore */ }
     }
     setListening(false);
   }, [setListening]);
 
-  // Speak then listen
-  const prompt = useCallback(async (text: string, timeoutMs = 8000): Promise<string | null> => {
+  /**
+   * converse — speak a prompt, then automatically begin listening.
+   * Returns the captured speech string, or null on timeout/error.
+   * This is the primary building block for the conversation loop.
+   */
+  const converse = useCallback(async (
+    text: string,
+    opts?: { listenMs?: number; pauseMs?: number }
+  ): Promise<string | null> => {
     await speak(text);
+    // Brief pause so the user can process what was said
+    await delay(opts?.pauseMs ?? 350);
     try {
-      return await listen(timeoutMs);
+      return await listen(opts?.listenMs ?? 9000);
     } catch {
       return null;
     }
   }, [speak, listen]);
 
-  return { speak, listen, stopSpeaking, stopListening, prompt };
+  /**
+   * retry — call converse up to `maxTries` times until a non-empty response.
+   */
+  const retry = useCallback(async (
+    promptText: string,
+    retryText: string,
+    validate: (s: string) => boolean,
+    maxTries = 2
+  ): Promise<string | null> => {
+    for (let i = 0; i < maxTries; i++) {
+      const resp = await converse(i === 0 ? promptText : retryText);
+      if (resp && validate(resp)) return resp;
+    }
+    return null;
+  }, [converse]);
+
+  // ── Shorthand: speak then listen ─────────────────────────
+  const prompt = useCallback(async (
+    text: string,
+    timeoutMs = 9000
+  ): Promise<string | null> => {
+    await speak(text);
+    try { return await listen(timeoutMs); } catch { return null; }
+  }, [speak, listen]);
+
+  return {
+    speak,
+    listen,
+    converse,
+    retry,
+    prompt,
+    stopSpeaking,
+    stopListening,
+    isSpeechSupported,
+  };
 }
