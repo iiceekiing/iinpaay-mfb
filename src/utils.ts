@@ -1,4 +1,4 @@
-import type { User, Transaction, Project } from './types';
+import type { User, Transaction, Project, Complaint } from './types';
 
 // ── Storage keys ──────────────────────────────────────────────
 const KEYS = {
@@ -6,6 +6,7 @@ const KEYS = {
   currentUser: 'iinpaay_current',
   transactions:'iinpaay_transactions',
   projects:    'iinpaay_projects',
+  complaints:  'iinpaay_complaints',
   language:    'iinpaay_language',
 };
 
@@ -34,17 +35,21 @@ export function saveTransactions(t: Transaction[]) { save(KEYS.transactions, t);
 export function getProjects(): Project[] { return load<Project[]>(KEYS.projects, []); }
 export function saveProjects(p: Project[]) { save(KEYS.projects, p); }
 
+// ── Complaints ────────────────────────────────────────────────
+export function getComplaints(): Complaint[] { return load<Complaint[]>(KEYS.complaints, []); }
+export function saveComplaints(c: Complaint[]) { save(KEYS.complaints, c); }
+
 // ── Language ──────────────────────────────────────────────────
 export function getSavedLanguage(): string | null { return localStorage.getItem(KEYS.language); }
 export function setSavedLanguage(lang: string)    { localStorage.setItem(KEYS.language, lang); }
 
-// ── Account number generator ──────────────────────────────────
+// ── Account number from phone ─────────────────────────────────
+// Strip leading zero(s), use the resulting 10 digits.
+// e.g. 08037794810 → 8037794810
 export function generateAccountNumber(phone: string): string {
   const digits = phone.replace(/\D/g, '');
-  const suffix = digits.slice(-7).padStart(7, '0');
-  const prefix = String(Math.floor(Math.random() * 90) + 10);
-  const mid    = String(Math.floor(Math.random() * 9) + 1);
-  return `${prefix}${mid}${suffix}`.slice(0, 10);
+  const stripped = digits.replace(/^0+/, '');          // remove leading zeros
+  return stripped.slice(0, 10).padEnd(10, '0');        // exactly 10 digits
 }
 
 // ── Generate unique ID ────────────────────────────────────────
@@ -68,6 +73,25 @@ export function formatTime(iso: string): string {
   try {
     return new Date(iso).toLocaleTimeString('en-NG', { hour: '2-digit', minute: '2-digit' });
   } catch { return ''; }
+}
+
+// ── Deadline helpers ──────────────────────────────────────────
+export function isToday(isoDate: string): boolean {
+  try {
+    const d = new Date(isoDate);
+    const now = new Date();
+    return d.getFullYear() === now.getFullYear() &&
+           d.getMonth()    === now.getMonth()    &&
+           d.getDate()     === now.getDate();
+  } catch { return false; }
+}
+
+export function isPastDeadline(isoDate: string): boolean {
+  try {
+    const d = new Date(isoDate);
+    d.setHours(23, 59, 59, 999);
+    return d < new Date();
+  } catch { return false; }
 }
 
 // ── Month name → number ───────────────────────────────────────

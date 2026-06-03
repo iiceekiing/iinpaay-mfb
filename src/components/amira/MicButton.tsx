@@ -29,16 +29,15 @@ export function MicButton({
   const noSpeech = !isSpeechSupported();
   const active   = isListening || isSpeaking || isProcessing;
 
-  // Color theming per state
   const bg = isProcessing
-    ? 'linear-gradient(135deg, #F5A623, #FFD166)'     // gold = processing
+    ? 'linear-gradient(135deg, #F5A623, #FFD166)'
     : isListening
-    ? 'linear-gradient(135deg, #1A3C8F, #3B9EFF)'     // blue = listening
+    ? 'linear-gradient(135deg, #1A3C8F, #3B9EFF)'
     : isSpeaking
-    ? 'linear-gradient(135deg, #009962, #00C27C)'     // green = speaking
+    ? 'linear-gradient(135deg, #009962, #00C27C)'
     : voiceEnabled
-    ? 'linear-gradient(135deg, #00C27C, #00E89A)'     // green idle
-    : 'linear-gradient(135deg, #7A8BA8, #9BAABF)';    // grey = voice off
+    ? 'linear-gradient(135deg, #00C27C, #00E89A)'
+    : 'linear-gradient(135deg, #7A8BA8, #9BAABF)';
 
   const glowColor = isProcessing  ? 'rgba(245,166,35,0.45)'
                   : isListening   ? 'rgba(59,158,255,0.5)'
@@ -97,7 +96,6 @@ export function MicButton({
         aria-label={isListening ? 'Listening' : isProcessing ? 'Processing' : 'Activate voice'}
       >
         {isProcessing ? (
-          /* Spinning dots when processing */
           <div className="flex gap-[3px]">
             {[0,1,2].map(i => (
               <div key={i} className="w-[5px] h-[5px] rounded-full bg-white/90"
@@ -105,7 +103,6 @@ export function MicButton({
             ))}
           </div>
         ) : isListening ? (
-          /* Bars when listening */
           <div className="flex items-center gap-[2.5px]">
             {[1,2,3,4,5].map(i => (
               <div key={i} style={{
@@ -116,7 +113,6 @@ export function MicButton({
             ))}
           </div>
         ) : isSpeaking ? (
-          /* Sound wave when speaking */
           <div className="flex items-center gap-[3px]">
             {[1,2,3].map(i => (
               <div key={i} style={{
@@ -127,7 +123,6 @@ export function MicButton({
             ))}
           </div>
         ) : (
-          /* Mic icon */
           <svg width={icon} height={icon} viewBox="0 0 24 24" fill="none">
             <rect x="9" y="2" width="6" height="11" rx="3" fill="white" />
             <path d="M5 10a7 7 0 0014 0" stroke="white" strokeWidth="2.2" strokeLinecap="round" />
@@ -137,17 +132,23 @@ export function MicButton({
         )}
       </button>
 
-      {/* Dismiss ✕ */}
+      {/* Close (X) button — clearly visible, not tiny */}
       {onDismiss && !isListening && !isProcessing && (
         <button
           onClick={e => { e.stopPropagation(); onDismiss(); }}
-          className="absolute z-20 flex items-center justify-center rounded-full transition-colors"
+          className="absolute z-20 flex items-center justify-center rounded-full transition-all active:scale-90"
           style={{
-            width: 17, height: 17, top: 2, right: 2,
-            background: 'rgba(13,27,62,0.7)', border: '1px solid rgba(255,255,255,0.18)',
-            fontSize: 8, color: 'rgba(255,255,255,0.75)', lineHeight: 1,
+            width: 22, height: 22,
+            top: 0, right: 0,
+            background: 'rgba(30,30,50,0.85)',
+            border: '1.5px solid rgba(255,255,255,0.25)',
+            fontSize: 10,
+            color: '#fff',
+            lineHeight: 1,
+            boxShadow: '0 2px 6px rgba(0,0,0,0.3)',
           }}
-          title="Dismiss" aria-label="Dismiss Amira"
+          title="Close Amira"
+          aria-label="Close Amira"
         >
           ✕
         </button>
@@ -161,7 +162,6 @@ export function MicButton({
         </span>
       )}
 
-      {/* No-speech hint */}
       {noSpeech && (
         <span className="text-[9px] text-white/30 text-center max-w-[72px] leading-tight select-none -mt-1">
           Use Chrome

@@ -70,9 +70,9 @@ export function Profile() {
           </div>
         </div>
 
-        {/* Voice toggle */}
+        {/* Voice toggles (Amira + Voice Guide) */}
         <div className="mx-4 mb-4">
-          <p className="text-xs font-bold text-ink-muted uppercase tracking-wider mb-2">Voice Assistance</p>
+          <p className="text-xs font-bold text-ink-muted uppercase tracking-wider mb-2">Voice Settings</p>
           <VoiceToggle />
         </div>
 

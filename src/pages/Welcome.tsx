@@ -20,54 +20,19 @@ export function Welcome() {
   const { speak, converse, activateListen, stopSpeaking } = useAmira();
 
   const [phase, setPhase] = useState<'idle' | 'lang' | 'account'>('idle');
+  const [showLangPicker, setShowLangPicker] = useState(false);
 
   const L = LANGS[language];
 
-  // ── Mic button — starts the full voice conversation ──────────
-  const handleMicClick = async () => {
-    if (amiraDismissed) { restoreAmira(); return; }
-    stopSpeaking();
-
-    // Set Amira's greeting text immediately (visible even if voice is off)
-    setAmiraText(`${L.welcome} ${L.welcome_sub}`);
-    setPhase('lang');
-
-    // If voice is enabled, run the full conversation loop
-    if (voiceEnabled) {
-      await speak(`${L.welcome} ${L.welcome_sub}`);
-      const langResp = await converse(L.choose_lang, { listenMs: 12000 });
-
-      if (langResp) {
-        const lower = langResp.toLowerCase();
-        if      (lower.includes('hausa')   || lower.includes('ha'))   setLanguage('ha');
-        else if (lower.includes('yoruba')  || lower.includes('yor'))  setLanguage('yo');
-        else if (lower.includes('igbo')    || lower.includes('ibo'))  setLanguage('ig');
-        else if (lower.includes('english') || lower.includes('en'))   setLanguage('en');
-      }
-
-      setPhase('account');
-      const L2 = LANGS[language];
-      const accountResp = await converse(L2.have_account, { listenMs: 10000 });
-
-      if (accountResp) {
-        const intent = detectIntent(accountResp);
-        if (intent === 'YES' || intent === 'LOGIN') { await speak(L2.yes + '!'); navigate('login'); }
-        else { await speak(L2.no + '!'); navigate('register'); }
-      }
-    } else {
-      // Voice off — just show the text and guide visually
-      setPhase('account');
-    }
-  };
-
-  // ── Language selection (manual) ──────────────────────────────
-  const selectLanguage = async (lang: LangCode) => {
+  // ── Language quick-select (persistent button) ────────────────
+  const handleLangSelect = async (lang: LangCode) => {
     setLanguage(lang);
+    setShowLangPicker(false);
     const LN = LANGS[lang];
     setAmiraText(LN.have_account);
     setPhase('account');
     if (voiceEnabled) {
-      const resp = await converse(LN.have_account, { listenMs: 10000 });
+      const resp = await converse(LN.have_account, { listenMs: 12000 });
       if (resp) {
         if (isYes(resp) || detectIntent(resp) === 'LOGIN') navigate('login');
         else navigate('register');
@@ -75,11 +40,42 @@ export function Welcome() {
     }
   };
 
-  // ── Voice command while on account phase ─────────────────────
+  // ── Mic button ────────────────────────────────────────────────
+  const handleMicClick = async () => {
+    if (amiraDismissed) { restoreAmira(); return; }
+    stopSpeaking();
+
+    setAmiraText(`${L.welcome} ${L.welcome_sub}`);
+    setPhase('lang');
+
+    if (voiceEnabled) {
+      await speak(`${L.welcome} ${L.welcome_sub}`);
+      const langResp = await converse(L.choose_lang, { listenMs: 12000 });
+      if (langResp) {
+        const lower = langResp.toLowerCase();
+        if      (lower.includes('hausa')   || lower.includes('ha'))   setLanguage('ha');
+        else if (lower.includes('yoruba')  || lower.includes('yor'))  setLanguage('yo');
+        else if (lower.includes('igbo')    || lower.includes('ibo'))  setLanguage('ig');
+        else                                                            setLanguage('en');
+      }
+
+      setPhase('account');
+      const L2 = LANGS[language];
+      const accountResp = await converse(L2.have_account, { listenMs: 12000 });
+      if (accountResp) {
+        const intent = detectIntent(accountResp);
+        if (intent === 'YES' || intent === 'LOGIN') navigate('login');
+        else navigate('register');
+      }
+    } else {
+      setPhase('account');
+    }
+  };
+
   const listenForAccount = async () => {
     const L2 = LANGS[language];
     setAmiraText(L2.have_account);
-    const resp = await converse(L2.have_account, { listenMs: 10000 });
+    const resp = await converse(L2.have_account, { listenMs: 12000 });
     if (resp) {
       if (isYes(resp) || detectIntent(resp) === 'LOGIN') navigate('login');
       else navigate('register');
@@ -93,8 +89,51 @@ export function Welcome() {
     >
       <div className="scroll-area flex flex-col items-center">
 
+        {/* ── Language button — always visible at top ── */}
+        <div className="w-full flex justify-end px-4 pt-12">
+          <button
+            onClick={() => setShowLangPicker(v => !v)}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all active:scale-95"
+            style={{
+              background: 'rgba(255,255,255,0.1)',
+              border: '1px solid rgba(255,255,255,0.18)',
+              color: 'rgba(255,255,255,0.75)',
+            }}
+          >
+            {LANG_OPTIONS.find(o => o.code === language)?.flag ?? '🌐'}
+            <span>{LANG_OPTIONS.find(o => o.code === language)?.label ?? 'Language'}</span>
+            <span className="opacity-60">{showLangPicker ? '▲' : '▼'}</span>
+          </button>
+        </div>
+
+        {/* Language picker dropdown */}
+        {showLangPicker && (
+          <div className="w-full px-4 mt-2 animate-slide-up">
+            <div className="grid grid-cols-2 gap-2">
+              {LANG_OPTIONS.map(opt => (
+                <button
+                  key={opt.code}
+                  onClick={() => handleLangSelect(opt.code)}
+                  className="flex items-center gap-2 px-3 py-3 rounded-xl border transition-all active:scale-95"
+                  style={{
+                    background:  language === opt.code ? 'rgba(0,194,124,0.18)' : 'rgba(255,255,255,0.07)',
+                    borderColor: language === opt.code ? 'rgba(0,194,124,0.55)' : 'rgba(255,255,255,0.12)',
+                  }}
+                >
+                  <span className="text-xl">{opt.flag}</span>
+                  <div className="text-left">
+                    <div className="text-white text-sm font-semibold">{opt.label}</div>
+                    <div className="text-white/35 text-[10px]">{opt.native}</div>
+                  </div>
+                  {language === opt.code && <span className="ml-auto text-[#00C27C] text-sm">✓</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Logo */}
-        <div className="flex flex-col items-center pt-14 pb-4 animate-fade-in">
+        <div className="flex flex-col items-center pt-6 pb-4 animate-fade-in">
           <div className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
                style={{ background: 'rgba(0,194,124,0.12)', border: '1.5px solid rgba(0,194,124,0.35)' }}>
             <span className="text-2xl font-black text-brand-accent" style={{ fontFamily: 'DM Sans' }}>ii</span>
@@ -103,7 +142,7 @@ export function Welcome() {
           <span className="text-[10px] font-medium text-white/35 tracking-widest uppercase mt-0.5">Financial Trust</span>
         </div>
 
-        {/* Amira bubble — shows Amira's text even when voice is off */}
+        {/* Amira bubble */}
         {phase !== 'idle' && (
           <div className="w-full max-w-sm px-4 mb-5 animate-fade-in">
             <AmiraBubble />
@@ -111,11 +150,9 @@ export function Welcome() {
         )}
 
         {/* Intro text when idle */}
-        {phase === 'idle' && (
+        {phase === 'idle' && !showLangPicker && (
           <div className="w-full max-w-sm px-5 mb-6 text-center animate-fade-in">
-            <p className="text-white/60 text-sm leading-relaxed">
-              {L.welcome_sub}
-            </p>
+            <p className="text-white/60 text-sm leading-relaxed">{L.welcome_sub}</p>
             <p className="text-white/35 text-xs mt-2">{L.tap_mic}</p>
           </div>
         )}
@@ -132,8 +169,8 @@ export function Welcome() {
           />
         )}
 
-        {/* Language grid — show after mic is first tapped */}
-        {phase === 'lang' && (
+        {/* Language grid — shown when user taps mic (during onboarding) */}
+        {phase === 'lang' && !showLangPicker && (
           <div className="w-full px-5 mt-6 animate-slide-up">
             <p className="text-center text-white/45 text-[11px] font-semibold mb-3 uppercase tracking-widest">
               {L.choose_lang}
@@ -142,7 +179,7 @@ export function Welcome() {
               {LANG_OPTIONS.map(opt => (
                 <button
                   key={opt.code}
-                  onClick={() => selectLanguage(opt.code)}
+                  onClick={() => handleLangSelect(opt.code)}
                   className="flex items-center gap-3 px-4 py-3.5 rounded-2xl border transition-all active:scale-95"
                   style={{
                     background:  language === opt.code ? 'rgba(0,194,124,0.15)' : 'rgba(255,255,255,0.06)',
@@ -180,7 +217,7 @@ export function Welcome() {
           </div>
         )}
 
-        {/* Manual CTAs always visible */}
+        {/* Manual CTAs when idle */}
         {phase === 'idle' && (
           <div className="w-full px-5 mt-6 flex flex-col gap-3 animate-slide-up">
             <button onClick={() => navigate('register')}

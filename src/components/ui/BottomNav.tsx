@@ -2,10 +2,10 @@ import { useStore } from '../../store';
 import type { Page } from '../../types';
 
 const TABS: { page: Page; label: string; icon: string }[] = [
-  { page: 'dashboard', label: 'Home',     icon: '🏠' },
-  { page: 'history',   label: 'History',  icon: '📋' },
-  { page: 'projects',  label: 'Projects', icon: '💼' },
-  { page: 'profile',   label: 'Profile',  icon: '👤' },
+  { page: 'dashboard',  label: 'Home',        icon: '🏠' },
+  { page: 'history',    label: 'History',     icon: '📋' },
+  { page: 'payupfront', label: 'Pay Upfront', icon: '💰' },
+  { page: 'profile',    label: 'Profile',     icon: '👤' },
 ];
 
 export function BottomNav() {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useStore, useLang } from '../store';
 import { useAmira } from '../hooks/useAmira';
+import { useVoiceGuide } from '../hooks/useVoiceGuide';
 import { BottomNav } from '../components/ui/BottomNav';
 import { AmiraBubble } from '../components/amira/AmiraBubble';
 import { MicButton, AmiraReopenButton } from '../components/amira/MicButton';
@@ -9,24 +10,63 @@ import { detectIntent } from '../utils/intent';
 import type { Transaction, Page } from '../types';
 
 function TxnRow({ txn }: { txn: Transaction }) {
-  const isCredit  = txn.type === 'credit';
-  const isPending = txn.status === 'pending';
+  const isCredit   = txn.type === 'credit';
+  const isPending  = txn.status === 'pending';
+  const isReleased = txn.status === 'released';
+  const isRefunded = txn.status === 'refunded';
+
+  const iconBg = isCredit
+    ? '#D6F5EA'
+    : isPending
+    ? 'rgba(245,166,35,0.15)'
+    : isRefunded
+    ? 'rgba(122,139,168,0.15)'
+    : 'rgba(255,107,53,0.1)';
+
+  const icon = isCredit ? '↙' : isPending ? '🛡' : isRefunded ? '↩' : '↗';
+
+  const amountColor = isCredit
+    ? '#009962'
+    : isPending
+    ? '#92600A'
+    : isRefunded
+    ? '#7A8BA8'
+    : '#FF4757';
+
+  const badge = isPending ? 'Pending'
+              : isReleased ? 'Released'
+              : isRefunded ? 'Refunded'
+              : isCredit ? 'Credit' : 'Sent';
+
+  const badgeBg = isPending ? 'rgba(245,166,35,0.15)'
+                : isReleased ? 'rgba(0,194,124,0.15)'
+                : isRefunded ? 'rgba(122,139,168,0.15)'
+                : isCredit ? '#D6F5EA' : 'rgba(255,107,53,0.1)';
+
+  const badgeColor = isPending ? '#92600A'
+                   : isReleased ? '#009962'
+                   : isRefunded ? '#7A8BA8'
+                   : isCredit ? '#009962' : '#CC3311';
+
   return (
     <div className="flex items-center gap-3 py-3 border-b last:border-0" style={{ borderColor: '#E4E9F2' }}>
       <div className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0"
-           style={{ background: isCredit ? '#D6F5EA' : isPending ? 'rgba(245,166,35,0.15)' : 'rgba(255,107,53,0.1)' }}>
-        {isCredit ? '↙' : isPending ? '🛡' : '↗'}
+           style={{ background: iconBg }}>
+        {icon}
       </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-semibold text-ink-primary truncate">{txn.description}</p>
-        <p className="text-xs text-ink-muted">{formatDate(txn.timestamp)} · {formatTime(txn.timestamp)}</p>
-        {isPending && (
-          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(245,166,35,0.15)', color: '#92600A' }}>Pending</span>
+        {txn.purpose && txn.purpose !== txn.description && (
+          <p className="text-xs text-ink-muted truncate">Purpose: {txn.purpose}</p>
         )}
+        <p className="text-xs text-ink-muted">{formatDate(txn.timestamp)} · {formatTime(txn.timestamp)}</p>
+        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: badgeBg, color: badgeColor }}>
+          {badge}
+        </span>
       </div>
       <p className="text-sm font-bold flex-shrink-0"
-         style={{ color: isCredit ? '#009962' : isPending ? '#92600A' : '#FF4757' }}>
+         style={{ color: amountColor }}>
         {isCredit ? '+' : '-'}{formatNaira(txn.amount)}
       </p>
     </div>
@@ -36,9 +76,9 @@ function TxnRow({ txn }: { txn: Transaction }) {
 const INTENT_ROUTES: Partial<Record<ReturnType<typeof detectIntent>, Page>> = {
   ADD_MONEY:      'add',
   SEND_MONEY:     'send',
-  CREATE_PROJECT: 'projects',
+  CREATE_PROJECT: 'payupfront',
   HISTORY:        'history',
-  PROJECTS:       'projects',
+  PROJECTS:       'payupfront',
   PROFILE:        'profile',
 };
 
@@ -54,42 +94,37 @@ export function Dashboard() {
   const voiceEnabled   = useStore(s => s.voiceEnabled);
   const L              = useLang();
   const { speak, activateListen, stopSpeaking } = useAmira();
+  const { announcePage }                         = useVoiceGuide();
 
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [greeted, setGreeted]               = useState(false);
   const [commandActive, setCommandActive]   = useState(false);
 
-  // ── Set greeting text on first load (visual only, no auto-speak) ──
   useEffect(() => {
     if (!user || greeted) return;
     setGreeted(true);
     const firstName = user.fullName.split(' ')[0] ?? user.fullName;
     setAmiraText(L.dash_greeting(firstName));
+    announcePage(`Welcome back, ${firstName}. You are on the home screen.`);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ── Ask Amira — user-initiated global command ────────────────
   const handleMicClick = async () => {
     if (commandActive) { stopSpeaking(); setCommandActive(false); return; }
     if (amiraDismissed) { restoreAmira(); return; }
 
     setCommandActive(true);
-
-    // Show the guidance text immediately
     setAmiraText(L.dash_guide);
 
-    // If voice is enabled, speak then listen; otherwise just listen (text mode)
     let resp: string | null = null;
     if (voiceEnabled) {
       await speak(L.dash_guide);
-      resp = await activateListen(10000);
+      resp = await activateListen(15000);
     } else {
-      // Voice is off — show the prompt text, listening is the only interaction
-      resp = await activateListen(10000);
+      resp = await activateListen(15000);
     }
 
     setCommandActive(false);
-
     if (!resp) return;
 
     const intent    = detectIntent(resp);
@@ -115,11 +150,13 @@ export function Dashboard() {
   const recentTxns = transactions.slice().reverse().slice(0, 5);
   const firstName  = user.fullName.split(' ')[0] ?? user.fullName;
 
+  const pendingCount = transactions.filter(t => t.status === 'pending').length;
+
   const quickActions = [
-    { icon: '📤', label: 'Send Money',  page: 'send'     as Page, bg: '#FF6B35' },
-    { icon: '➕', label: 'Add Money',   page: 'add'      as Page, bg: '#00C27C' },
-    { icon: '💼', label: 'Projects',    page: 'projects' as Page, bg: '#1A3C8F' },
-    { icon: '📋', label: 'History',     page: 'history'  as Page, bg: '#F5A623' },
+    { icon: '📤', label: 'Send Money',   page: 'send'       as Page, bg: '#FF6B35' },
+    { icon: '➕', label: 'Add Money',    page: 'add'        as Page, bg: '#00C27C' },
+    { icon: '💰', label: 'Pay Upfront',  page: 'payupfront' as Page, bg: '#1A3C8F' },
+    { icon: '📋', label: 'History',      page: 'history'    as Page, bg: '#F5A623' },
   ];
 
   return (
@@ -152,7 +189,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Amira bubble — always shows text guidance, voice is optional */}
+        {/* Amira bubble */}
         {!amiraDismissed && (
           <div className="px-4 pb-1 min-h-[1px]">
             <AmiraBubble compact />
@@ -210,16 +247,16 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Protected payments */}
-        {transactions.some(t => t.status === 'pending') && (
+        {/* Pending payments alert */}
+        {pendingCount > 0 && (
           <div className="mx-4 mb-3 p-3.5 rounded-2xl animate-fade-in"
                style={{ background: 'rgba(245,166,35,0.1)', border: '1px solid rgba(245,166,35,0.28)' }}>
             <div className="flex items-center gap-2">
               <span className="text-lg">🛡</span>
-              <span className="text-sm font-bold" style={{ color: '#92600A' }}>Protected Payments</span>
+              <span className="text-sm font-bold" style={{ color: '#92600A' }}>Pending Payments</span>
               <span className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full"
                     style={{ background: '#F5A623', color: '#fff' }}>
-                {transactions.filter(t => t.status === 'pending').length}
+                {pendingCount}
               </span>
             </div>
           </div>

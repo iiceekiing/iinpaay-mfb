@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useStore, useLang } from '../store';
 import { useAmira } from '../hooks/useAmira';
+import { useVoiceGuide } from '../hooks/useVoiceGuide';
 import { MicButton, AmiraReopenButton } from '../components/amira/MicButton';
 import { AmiraBubble } from '../components/amira/AmiraBubble';
 import { PinInput } from '../components/ui/PinInput';
-import { parseMonth, parseNumberFromSpeech } from '../utils';
+import { parseMonth, parseNumberFromSpeech, generateAccountNumber } from '../utils';
 import { extractPhone } from '../utils/intent';
 
 type Step = 'name' | 'dob_day' | 'dob_month' | 'dob_year' | 'gender' | 'phone' | 'pin';
@@ -33,6 +34,7 @@ export function Register() {
   const voiceEnabled   = useStore(s => s.voiceEnabled);
   const L              = useLang();
   const { speak, converse, stopSpeaking } = useAmira();
+  const { announceField, announcePage }   = useVoiceGuide();
 
   const [step, setStep]     = useState<Step>('name');
   const [name, setName]     = useState('');
@@ -45,35 +47,44 @@ export function Register() {
   const [error, setError]   = useState('');
   const [micBusy, setMicBusy] = useState(false);
 
-  // ── Mic tap — starts voice interaction for the current step ──
+  // Announce the page once on mount
+  useEffect(() => {
+    announcePage('Let\'s create your INPAAY account. Please fill in your details.');
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const PROMPTS: Record<Step, string> = {
+    name:      L.reg_name_prompt,
+    dob_day:   L.reg_day_prompt,
+    dob_month: L.reg_month_prompt,
+    dob_year:  L.reg_year_prompt,
+    gender:    L.reg_gender_prompt,
+    phone:     L.reg_phone_prompt,
+    pin:       L.reg_pin_prompt,
+  };
+
+  const LABELS: Record<Step, string> = {
+    name:'Full Name', dob_day:'Day of Birth', dob_month:'Month of Birth',
+    dob_year:'Year of Birth', gender:'Gender', phone:'Phone Number', pin:'Transfer PIN',
+  };
+
+  // ── Mic tap — voice interaction for current step ──────────────
   const handleMicClick = async () => {
     if (micBusy) { stopSpeaking(); setMicBusy(false); return; }
-    if (step === 'pin') return; // PIN is always typed
+    if (step === 'pin') return;
 
     setMicBusy(true);
     setError('');
-
-    const PROMPTS: Record<Step, string> = {
-      name:      L.reg_name_prompt,
-      dob_day:   L.reg_day_prompt,
-      dob_month: L.reg_month_prompt,
-      dob_year:  L.reg_year_prompt,
-      gender:    L.reg_gender_prompt,
-      phone:     L.reg_phone_prompt,
-      pin:       L.reg_pin_prompt,
-    };
-
-    // Always show the prompt text (works even without voice)
     setAmiraText(PROMPTS[step]);
 
     try {
-      const resp = await converse(PROMPTS[step], { listenMs: 10000 });
+      const resp = await converse(PROMPTS[step], {
+        listenMs:    15000,
+        maxRetries:  2,
+        retryPrompt: `${L.retry_prompt} ${PROMPTS[step]}`,
+      });
 
-      if (!resp) {
-        // Voice off or no speech — prompt text is shown, user types manually
-        setMicBusy(false);
-        return;
-      }
+      if (!resp) { setMicBusy(false); return; }
 
       if (step === 'name') {
         if (resp.trim().length >= 2) { setName(resp.trim()); advanceStep(); }
@@ -112,7 +123,7 @@ export function Register() {
           setStep('pin');
         } else { setError(L.not_understood); }
       }
-    } catch { /* no mic / browser issue — user types manually */ }
+    } catch { /* mic unavailable */ }
 
     setMicBusy(false);
   };
@@ -123,13 +134,12 @@ export function Register() {
     if (next) { setStep(next); setError(''); }
   };
 
-  // ── Manual next ────────────────────────────────────────────
+  // ── Manual next ────────────────────────────────────────────────
   const nextStep = () => {
     setError('');
     if (step === 'name') {
       if (!name.trim()) { setError('Enter your full name'); return; }
-      if (voiceEnabled) speak(L.reg_day_prompt);
-      else setAmiraText(L.reg_day_prompt);
+      if (voiceEnabled) speak(L.reg_day_prompt); else setAmiraText(L.reg_day_prompt);
       setStep('dob_day');
     } else if (step === 'dob_day') {
       const n = parseInt(day, 10);
@@ -163,22 +173,17 @@ export function Register() {
       const user = register({
         fullName: name, dateOfBirth: dob,
         gender: gender as 'male' | 'female',
-        phone:  phone.replace(/\D/g, ''), pin,
+        phone: phone.replace(/\D/g, ''), pin,
       });
       if (voiceEnabled) speak(L.reg_success(user.fullName));
       navigate('dashboard');
     }
   };
 
-  const LABELS: Record<Step, string> = {
-    name:'Full Name', dob_day:'Day of Birth', dob_month:'Month of Birth',
-    dob_year:'Year of Birth', gender:'Gender', phone:'Phone Number', pin:'Transfer PIN',
-  };
-  const PROMPTS: Record<Step, string> = {
-    name:L.reg_name_prompt, dob_day:L.reg_day_prompt, dob_month:L.reg_month_prompt,
-    dob_year:L.reg_year_prompt, gender:L.reg_gender_prompt, phone:L.reg_phone_prompt,
-    pin:L.reg_pin_prompt,
-  };
+  // Computed account number preview from phone
+  const accountPreview = phone.replace(/\D/g, '').length >= 10
+    ? generateAccountNumber(phone.replace(/\D/g, ''))
+    : null;
 
   return (
     <div className="phone-frame bg-surface-light">
@@ -196,7 +201,7 @@ export function Register() {
       </div>
 
       <div className="scroll-area">
-        {/* Amira guidance — text always visible */}
+        {/* Amira guidance */}
         <div className="mt-4">
           <AmiraBubble
             text={amiraDismissed ? undefined : PROMPTS[step]}
@@ -210,10 +215,15 @@ export function Register() {
 
         <div className="mx-6 animate-slide-up" key={step}>
           {step === 'name' && (
-            <input autoFocus value={name} onChange={e => setName(e.target.value)}
-                   placeholder="e.g. Amara Okonkwo"
-                   className="w-full px-4 py-4 rounded-2xl text-base font-medium border-2 transition-all"
-                   style={{ borderColor: name ? '#00C27C' : '#CBD3E8', background: '#fff', color: '#0D1B3E' }} />
+            <input
+              autoFocus
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onFocus={() => announceField('Full Name', L.reg_name_prompt)}
+              placeholder="e.g. Amara Okonkwo"
+              className="w-full px-4 py-4 rounded-2xl text-base font-medium border-2 transition-all"
+              style={{ borderColor: name ? '#00C27C' : '#CBD3E8', background: '#fff', color: '#0D1B3E' }}
+            />
           )}
 
           {(step === 'dob_day' || step === 'dob_month' || step === 'dob_year') && (
@@ -221,13 +231,19 @@ export function Register() {
               {(['Day','Month','Year'] as const).map((lbl, idx) => {
                 const vals  = [day, month, year];
                 const setrs = [setDay, setMonth, setYear];
+                const prompts = [L.reg_day_prompt, L.reg_month_prompt, L.reg_year_prompt];
                 return (
                   <div key={lbl} className="flex-1">
                     <label className="text-xs text-ink-muted mb-1 block">{lbl}</label>
-                    <input value={vals[idx]} onChange={e => setrs[idx]!(e.target.value)}
-                           placeholder={['15','7','1995'][idx]} type="number"
-                           className="w-full px-3 py-4 rounded-2xl border-2 text-center text-lg font-bold"
-                           style={{ borderColor: vals[idx] ? '#00C27C' : '#CBD3E8', background: '#fff', color: '#0D1B3E' }} />
+                    <input
+                      value={vals[idx]}
+                      onChange={e => setrs[idx]!(e.target.value)}
+                      onFocus={() => announceField(lbl, prompts[idx]!)}
+                      placeholder={['15','7','1995'][idx]}
+                      type="number"
+                      className="w-full px-3 py-4 rounded-2xl border-2 text-center text-lg font-bold"
+                      style={{ borderColor: vals[idx] ? '#00C27C' : '#CBD3E8', background: '#fff', color: '#0D1B3E' }}
+                    />
                   </div>
                 );
               })}
@@ -247,10 +263,24 @@ export function Register() {
           )}
 
           {step === 'phone' && (
-            <input value={phone} onChange={e => setPhone(e.target.value)}
-                   placeholder="e.g. 08031234567" type="tel"
-                   className="w-full px-4 py-4 rounded-2xl text-base font-medium border-2 transition-all"
-                   style={{ borderColor: phone ? '#00C27C' : '#CBD3E8', background: '#fff', color: '#0D1B3E' }} />
+            <>
+              <input
+                value={phone}
+                onChange={e => setPhone(e.target.value)}
+                onFocus={() => announceField('Phone Number', L.reg_phone_prompt)}
+                placeholder="e.g. 08031234567"
+                type="tel"
+                className="w-full px-4 py-4 rounded-2xl text-base font-medium border-2 transition-all"
+                style={{ borderColor: phone ? '#00C27C' : '#CBD3E8', background: '#fff', color: '#0D1B3E' }}
+              />
+              {accountPreview && (
+                <div className="mt-2 px-4 py-2 rounded-xl flex items-center gap-2"
+                     style={{ background: 'rgba(0,194,124,0.08)', border: '1px solid rgba(0,194,124,0.2)' }}>
+                  <span className="text-xs text-ink-muted">Your account number:</span>
+                  <span className="text-sm font-bold font-mono text-brand-accent tracking-widest">{accountPreview}</span>
+                </div>
+              )}
+            </>
           )}
 
           {step === 'pin' && (

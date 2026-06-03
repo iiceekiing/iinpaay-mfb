@@ -1,17 +1,19 @@
 export type LangCode = 'en' | 'ha' | 'yo' | 'ig';
-export type Page = 'welcome' | 'register' | 'login' | 'dashboard' | 'send' | 'add' | 'projects' | 'history' | 'profile';
+export type Page =
+  | 'welcome' | 'register' | 'login' | 'dashboard'
+  | 'send' | 'add' | 'payupfront' | 'history' | 'profile';
 export type Gender = 'male' | 'female';
-export type TransferType = 'standard' | 'protected';
+export type TransferType = 'standard' | 'protected' | 'payupfront';
 
 export interface User {
   id: string;
   fullName: string;
-  dateOfBirth: string;   // ISO date string
+  dateOfBirth: string;
   gender: Gender;
   phone: string;
-  pin: string;           // stored as plain text for demo
+  pin: string;
   accountNumber: string;
-  balance: number;       // naira
+  balance: number;
   createdAt: string;
 }
 
@@ -22,19 +24,41 @@ export interface Transaction {
   transferType?: TransferType;
   amount: number;
   description: string;
+  purpose?: string;           // project title or payment purpose
   recipientPhone?: string;
   recipientName?: string;
-  status: 'completed' | 'pending';
+  fromUserId?: string;        // for credit txns: who sent
+  fromUserName?: string;      // for credit txns: sender name
+  projectId?: string;         // linked Pay Upfront project
+  status: 'completed' | 'pending' | 'released' | 'refunded';
   timestamp: string;
 }
 
 export interface Project {
   id: string;
-  userId: string;
+  userId: string;               // the sender / project creator
   title: string;
+  description?: string;
+  totalAmount: number;
+  upfrontAmount: number;
+  recipientPhone: string;
+  recipientName: string;
+  deadline: string;             // ISO date string
+  status: 'active' | 'completed' | 'refunded';
+  senderTransactionId?: string;       // debit txn on sender side
+  recipientTransactionId?: string;    // pending credit txn on recipient side
+  createdAt: string;
+}
+
+export interface Complaint {
+  id: string;
+  transactionId: string;
+  projectId?: string;
+  userId: string;               // complainant (recipient)
   description: string;
-  budget: number;
-  deadline: string;
-  status: 'active' | 'completed';
+  proofFileName?: string;
+  proofFileType?: string;
+  proofFileData?: string;       // base64
+  status: 'submitted' | 'resolved';
   createdAt: string;
 }
