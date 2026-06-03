@@ -13,7 +13,7 @@ function TxnRow({ txn }: { txn: Transaction }) {
   const isPending = txn.status === 'pending';
   return (
     <div className="flex items-center gap-3 py-3 border-b last:border-0" style={{ borderColor: '#E4E9F2' }}>
-      <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-base"
+      <div className="w-10 h-10 rounded-full flex items-center justify-center text-base flex-shrink-0"
            style={{ background: isCredit ? '#D6F5EA' : isPending ? 'rgba(245,166,35,0.15)' : 'rgba(255,107,53,0.1)' }}>
         {isCredit ? '↙' : isPending ? '🛡' : '↗'}
       </div>
@@ -22,9 +22,7 @@ function TxnRow({ txn }: { txn: Transaction }) {
         <p className="text-xs text-ink-muted">{formatDate(txn.timestamp)} · {formatTime(txn.timestamp)}</p>
         {isPending && (
           <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(245,166,35,0.15)', color: '#92600A' }}>
-            Pending
-          </span>
+                style={{ background: 'rgba(245,166,35,0.15)', color: '#92600A' }}>Pending</span>
         )}
       </div>
       <p className="text-sm font-bold flex-shrink-0"
@@ -49,52 +47,67 @@ export function Dashboard() {
   const transactions   = useStore(s => s.transactions);
   const logout         = useStore(s => s.logout);
   const navigate       = useStore(s => s.navigate);
+  const setAmiraText   = useStore(s => s.setAmiraText);
   const amiraDismissed = useStore(s => s.amiraDismissed);
   const dismissAmira   = useStore(s => s.dismissAmira);
   const restoreAmira   = useStore(s => s.restoreAmira);
+  const voiceEnabled   = useStore(s => s.voiceEnabled);
   const L              = useLang();
-  const { speak, converse, stopSpeaking } = useAmira();
+  const { speak, activateListen, stopSpeaking } = useAmira();
 
   const [balanceVisible, setBalanceVisible] = useState(true);
   const [greeted, setGreeted]               = useState(false);
+  const [commandActive, setCommandActive]   = useState(false);
 
-  // ── Initial greeting ────────────────────────────────────────
+  // ── Set greeting text on first load (visual only, no auto-speak) ──
   useEffect(() => {
     if (!user || greeted) return;
     setGreeted(true);
     const firstName = user.fullName.split(' ')[0] ?? user.fullName;
-    const timer = setTimeout(() => {
-      speak(L.dash_greeting(firstName));
-    }, 400);
-    return () => clearTimeout(timer);
+    setAmiraText(L.dash_greeting(firstName));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // ── Global voice command handler ────────────────────────────
-  const activateGlobalCommand = async () => {
+  // ── Ask Amira — user-initiated global command ────────────────
+  const handleMicClick = async () => {
+    if (commandActive) { stopSpeaking(); setCommandActive(false); return; }
     if (amiraDismissed) { restoreAmira(); return; }
-    stopSpeaking();
 
-    const guide = `${L.dash_guide}`;
-    const resp  = await converse(guide, { listenMs: 10000, pauseMs: 400 });
+    setCommandActive(true);
+
+    // Show the guidance text immediately
+    setAmiraText(L.dash_guide);
+
+    // If voice is enabled, speak then listen; otherwise just listen (text mode)
+    let resp: string | null = null;
+    if (voiceEnabled) {
+      await speak(L.dash_guide);
+      resp = await activateListen(10000);
+    } else {
+      // Voice is off — show the prompt text, listening is the only interaction
+      resp = await activateListen(10000);
+    }
+
+    setCommandActive(false);
 
     if (!resp) return;
 
-    const intent = detectIntent(resp);
+    const intent    = detectIntent(resp);
     const targetPage = INTENT_ROUTES[intent];
 
     if (targetPage) {
-      const action =
-        intent === 'ADD_MONEY'      ? L.dash_add_guide :
-        intent === 'SEND_MONEY'     ? L.dash_send_guide :
+      const confirmMsg =
+        intent === 'ADD_MONEY'  ? L.dash_add_guide :
+        intent === 'SEND_MONEY' ? L.dash_send_guide :
         `Going to ${targetPage}.`;
-      await speak(action);
+      setAmiraText(confirmMsg);
+      if (voiceEnabled) await speak(confirmMsg);
       navigate(targetPage);
-      return;
+    } else {
+      const retryMsg = L.not_understood + ' ' + L.dash_guide;
+      setAmiraText(retryMsg);
+      if (voiceEnabled) speak(retryMsg);
     }
-
-    // Fallback — tell the user what Amira heard
-    await speak(`${L.not_understood} ${L.dash_guide}`);
   };
 
   if (!user) { navigate('welcome'); return null; }
@@ -103,17 +116,16 @@ export function Dashboard() {
   const firstName  = user.fullName.split(' ')[0] ?? user.fullName;
 
   const quickActions = [
-    { icon: '📤', label: 'Send Money',  page: 'send' as Page,     bg: '#FF6B35' },
-    { icon: '➕', label: 'Add Money',   page: 'add' as Page,      bg: '#00C27C' },
+    { icon: '📤', label: 'Send Money',  page: 'send'     as Page, bg: '#FF6B35' },
+    { icon: '➕', label: 'Add Money',   page: 'add'      as Page, bg: '#00C27C' },
     { icon: '💼', label: 'Projects',    page: 'projects' as Page, bg: '#1A3C8F' },
-    { icon: '📋', label: 'History',     page: 'history' as Page,  bg: '#F5A623' },
+    { icon: '📋', label: 'History',     page: 'history'  as Page, bg: '#F5A623' },
   ];
 
   return (
     <div className="phone-frame bg-surface-light">
       {/* ── Top section ── */}
       <div className="flex-shrink-0" style={{ background: 'linear-gradient(160deg, #0D1B3E 0%, #1A3C8F 100%)' }}>
-        {/* Status bar */}
         <div className="flex items-center justify-between px-4 pt-12 pb-2">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-full flex items-center justify-center font-bold text-sm"
@@ -121,28 +133,30 @@ export function Dashboard() {
               {firstName[0]}
             </div>
             <div>
-              <p className="text-white/50 text-[11px]">Good day,</p>
+              <p className="text-white/45 text-[11px]">Good day,</p>
               <p className="text-white font-bold text-sm">{firstName}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
             {amiraDismissed ? (
               <AmiraReopenButton onReopen={restoreAmira} />
             ) : (
               <MicButton
-                onClick={activateGlobalCommand}
+                onClick={handleMicClick}
                 onDismiss={dismissAmira}
                 size="sm"
-                label="Amira"
+                label="Ask Amira"
               />
             )}
-            <button onClick={logout} className="text-white/40 text-[11px] px-2">Out</button>
+            <button onClick={logout} className="text-white/35 text-[11px] px-1.5">Out</button>
           </div>
         </div>
 
-        {/* Amira bubble */}
+        {/* Amira bubble — always shows text guidance, voice is optional */}
         {!amiraDismissed && (
-          <div className="px-4 pb-1 min-h-[1px]"><AmiraBubble compact /></div>
+          <div className="px-4 pb-1 min-h-[1px]">
+            <AmiraBubble compact />
+          </div>
         )}
 
         {/* Balance card */}
@@ -161,11 +175,9 @@ export function Dashboard() {
             <span className="text-3xl font-black text-white tracking-tight">
               {balanceVisible ? formatNaira(user.balance) : '₦ ••••••'}
             </span>
-            <button
-              onClick={() => navigate('add')}
-              className="flex items-center gap-1 px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95"
-              style={{ background: '#00C27C', color: '#0D1B3E' }}
-            >
+            <button onClick={() => navigate('add')}
+                    className="flex items-center gap-1 px-3 py-2 rounded-xl font-bold text-xs transition-all active:scale-95"
+                    style={{ background: '#00C27C', color: '#0D1B3E' }}>
               + Add
             </button>
           </div>
@@ -186,8 +198,8 @@ export function Dashboard() {
             {quickActions.map(a => (
               <button key={a.page} onClick={() => navigate(a.page)}
                       className="flex flex-col items-center gap-1.5 transition-all active:scale-95">
-                <div className="w-13 h-13 rounded-2xl flex items-center justify-center text-xl shadow-sm"
-                     style={{ background: a.bg, width: 52, height: 52 }}>
+                <div className="w-[52px] h-[52px] rounded-2xl flex items-center justify-center text-xl shadow-sm"
+                     style={{ background: a.bg }}>
                   {a.icon}
                 </div>
                 <span className="text-[10px] font-semibold text-ink-secondary text-center leading-tight">
@@ -198,7 +210,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Protected payments notice */}
+        {/* Protected payments */}
         {transactions.some(t => t.status === 'pending') && (
           <div className="mx-4 mb-3 p-3.5 rounded-2xl animate-fade-in"
                style={{ background: 'rgba(245,166,35,0.1)', border: '1px solid rgba(245,166,35,0.28)' }}>
@@ -218,9 +230,7 @@ export function Dashboard() {
           <div className="flex items-center justify-between mb-2">
             <p className="text-[10px] font-bold text-ink-muted uppercase tracking-widest">Recent</p>
             {transactions.length > 5 && (
-              <button onClick={() => navigate('history')}
-                      className="text-xs font-semibold"
-                      style={{ color: '#1A3C8F' }}>
+              <button onClick={() => navigate('history')} className="text-xs font-semibold" style={{ color: '#1A3C8F' }}>
                 See all →
               </button>
             )}
@@ -230,9 +240,7 @@ export function Dashboard() {
               <div className="py-10 text-center">
                 <span className="text-4xl mb-3 block">💳</span>
                 <p className="text-sm text-ink-muted">No transactions yet.</p>
-                <button onClick={() => navigate('add')}
-                        className="mt-3 text-sm font-semibold"
-                        style={{ color: '#00C27C' }}>
+                <button onClick={() => navigate('add')} className="mt-3 text-sm font-semibold" style={{ color: '#00C27C' }}>
                   Add money to get started →
                 </button>
               </div>
@@ -241,7 +249,6 @@ export function Dashboard() {
             )}
           </div>
         </div>
-
         <div className="h-4" />
       </div>
 

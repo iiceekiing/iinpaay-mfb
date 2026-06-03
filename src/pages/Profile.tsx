@@ -1,6 +1,7 @@
 import { useStore } from '../store';
 import { useLang } from '../store';
 import { BottomNav } from '../components/ui/BottomNav';
+import { VoiceToggle } from '../components/ui/VoiceToggle';
 import { LANG_OPTIONS } from '../constants/langs';
 import { formatDate, formatNaira } from '../utils';
 import type { LangCode } from '../types';
@@ -67,6 +68,12 @@ export function Profile() {
               </button>
             ))}
           </div>
+        </div>
+
+        {/* Voice toggle */}
+        <div className="mx-4 mb-4">
+          <p className="text-xs font-bold text-ink-muted uppercase tracking-wider mb-2">Voice Assistance</p>
+          <VoiceToggle />
         </div>
 
         {/* Sign out */}
